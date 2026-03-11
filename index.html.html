@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>채팅</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f0f0f;--surface:#1a1a1a;--surface2:#242424;--accent:#e8ff5a;--text:#f0f0f0;--sub:#555;--danger:#ff5a5a}
+html,body{height:100%;background:var(--bg);font-family:'Noto Sans KR',sans-serif;display:flex;align-items:center;justify-content:center;overflow:hidden}
+
+.app{
+  display:flex;flex-direction:column;
+  position:relative;z-index:1;background:transparent;border-radius:16px;overflow:hidden;
+  width:100vw;height:56.25vw; /* 16:9 */
+  max-height:100vh;max-width:177.78vh; /* 16:9 반대 */
+  margin:auto;
+}
+
+/* 헤더 */
+.header{padding:14px 18px;border:none;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.07);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 20px rgba(0,0,0,0.3);border-radius:16px}
+.header-name{font-size:13px;font-weight:700;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,0.5)}
+.header-nick{font-size:12px;color:var(--sub)}
+
+/* 입장 화면 */
+.entry-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:12px;padding:32px;background:transparent}
+.entry-title{font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px}
+.entry-card{display:flex;flex-direction:column;align-items:center;gap:12px;padding:32px 36px;background:rgba(0,10,0,0.88);backdrop-filter:blur(16px);border-radius:8px;border:1px solid rgba(0,255,80,0.25);box-shadow:0 0 30px rgba(0,255,80,0.08),inset 0 0 30px rgba(0,0,0,0.4)}
+.entry-label{font-size:10px;color:rgba(0,255,80,0.5);text-align:center;width:100%;margin-bottom:-6px;letter-spacing:2px;text-transform:uppercase;font-family:monospace}
+.entry-input{width:260px;background:rgba(0,20,0,0.6);border:1px solid rgba(0,255,80,0.2);border-radius:4px;padding:9px 16px;font-size:13px;color:#00ff50;font-family:'Noto Sans KR',monospace;outline:none;text-align:center;letter-spacing:1px}
+.entry-input:focus{border-color:rgba(0,255,80,0.6);box-shadow:0 0 10px rgba(0,255,80,0.15)}
+.entry-input::placeholder{color:rgba(0,255,80,0.25)}
+.entry-btn{height:40px;width:260px;border-radius:4px;border:1px solid rgba(0,255,80,0.4);background:rgba(0,255,80,0.1);font-size:13px;font-weight:700;color:#00ff50;font-family:monospace;cursor:pointer;margin-top:6px;transition:all .2s;letter-spacing:2px}
+.entry-btn:active{transform:scale(.97)}.entry-btn:hover{background:rgba(0,255,80,0.2);box-shadow:0 0 16px rgba(0,255,80,0.2)}
+.entry-error{font-size:11px;color:#ff4040;display:none;align-self:flex-start;padding-left:2px;margin-top:-6px;font-family:monospace;letter-spacing:1px}
+.entry-error.show{display:block}
+
+/* 채팅 */
+.chat-screen{display:flex;flex-direction:column;flex:1;overflow:hidden}
+.chat{flex:1;overflow-y:auto;padding:16px 16px 8px;display:flex;flex-direction:column;scrollbar-width:thin;scrollbar-color:#2a2a2a transparent;background:transparent}
+.chat::-webkit-scrollbar{width:3px}
+.chat::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:3px}
+.msg-wrap{display:flex;animation:slideUp .2s ease;margin-top:3px}
+.msg-wrap.me{justify-content:flex-end}
+.msg-wrap.other{justify-content:flex-start}
+.msg-wrap.gap{margin-top:14px}
+@keyframes slideUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.msg-col{display:flex;flex-direction:column;max-width:68%}
+.msg-col.me{align-items:flex-end}
+.msg-col.other{align-items:flex-start}
+.msg-sender{font-size:10px;color:var(--sub);margin-bottom:3px;padding:0 3px}
+.bubble{padding:10px 14px;font-size:14px;line-height:1.55;word-break:break-word}
+.me .bubble{background:var(--accent);color:#0f0f0f;border-radius:18px 4px 18px 18px}
+.other .bubble{background:rgba(36,36,36,0.92);color:var(--text);border-radius:4px 18px 18px 18px}
+.msg-time{font-size:10px;color:var(--sub);margin-top:3px;padding:0 3px;display:flex;align-items:center;gap:5px}
+.msg-timer{font-size:10px;color:var(--danger);font-weight:600}
+
+/* 입력바 */
+.bar{padding:10px 12px;border:none;border-top:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.07);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);box-shadow:0 -2px 20px rgba(0,0,0,0.3);border-radius:16px}
+.bar-top{display:flex;align-items:center;gap:8px}
+.input{flex:1;background:var(--surface);border:1.5px solid #2a2a2a;border-radius:24px;padding:10px 16px;font-size:14px;color:var(--text);font-family:'Noto Sans KR',sans-serif;outline:none;transition:border .15s}
+.input::placeholder{color:#444}
+.input:focus{border-color:#3a3a3a;background:var(--surface2)}
+.send{height:40px;padding:0 16px;border-radius:20px;border:none;background:var(--accent);cursor:pointer;flex-shrink:0;font-size:13px;font-weight:700;color:#0f0f0f;font-family:'Noto Sans KR',sans-serif;transition:transform .1s}
+.send:disabled{background:#2a2a2a;cursor:default;color:#555}
+.send:not(:disabled):active{transform:scale(.92)}
+
+/* 자동삭제 선택 바 */
+.bar-bottom{display:flex;align-items:center;gap:6px;padding-top:8px;overflow-x:auto;scrollbar-width:none}
+.bar-bottom::-webkit-scrollbar{display:none}
+.del-label{font-size:11px;color:var(--sub);flex-shrink:0}
+.del-chip{flex-shrink:0;height:26px;padding:0 12px;border-radius:13px;border:1.5px solid #2a2a2a;background:transparent;font-size:11px;color:var(--sub);font-family:'Noto Sans KR',sans-serif;cursor:pointer;transition:all .15s}
+.del-chip.active{border-color:var(--accent);color:var(--accent);background:rgba(232,255,90,0.08)}
+
+
+.header-ip{font-size:10px;color:#3a3a3a;margin-top:2px}
+
+.img-btn{height:38px;padding:0 12px;border-radius:20px;border:1.5px solid #2a2a2a;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:13px;font-weight:700;color:var(--sub);font-family:'Noto Sans KR',sans-serif;transition:border-color .15s}
+.img-btn:hover{border-color:#3a3a3a}
+.img-input{display:none}
+.bubble-img{max-width:100%;border-radius:12px;display:block;cursor:pointer;margin-bottom:2px}
+.img-loading{font-size:12px;color:var(--sub);padding:8px 0}
+
+.typing-indicator{padding:2px 4px 4px;font-size:11px;color:rgba(255,255,255,0.35);min-height:18px;font-style:italic;}
+.typing-dot{display:inline-block;animation:blink 1.2s infinite;}
+.typing-dot:nth-child(2){animation-delay:.2s}
+.typing-dot:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:0}40%{opacity:1}}
+
+.audio-player{display:flex;align-items:center;gap:8px;padding:4px 0}
+.audio-player audio{width:300px;height:36px;filter:invert(1) brightness(0.7);}
+.audio-name{font-size:11px;color:var(--sub);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.lock-msg{font-size:12px;color:#ff4040;text-align:center;font-family:monospace;letter-spacing:1px;margin-top:-4px}
+.msg-actions{display:none;gap:6px;margin-top:4px;}
+.msg-wrap.me:hover .msg-actions{display:flex;justify-content:flex-end;}
+.msg-action-btn{font-size:10px;color:var(--sub);background:none;border:1px solid #2a2a2a;border-radius:10px;padding:2px 8px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:all .15s}
+.msg-action-btn:hover{border-color:#555;color:var(--text)}
+.msg-action-btn.del{color:#ff5a5a;border-color:#3a2a2a}
+.msg-action-btn.del:hover{border-color:#ff5a5a}
+
+.emoji-btn{height:40px;padding:0 12px;border-radius:20px;border:1.5px solid #2a2a2a;background:transparent;font-size:18px;cursor:pointer;flex-shrink:0;transition:border-color .15s;line-height:1}
+.emoji-btn:hover{border-color:#3a3a3a}
+.emoji-picker{position:absolute;bottom:70px;right:14px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:16px;padding:12px;display:flex;flex-wrap:wrap;gap:6px;width:280px;max-height:200px;overflow-y:auto;z-index:100;box-shadow:0 8px 32px rgba(0,0,0,0.5);animation:fadeUp .15s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.emoji-item{font-size:28px;cursor:pointer;padding:4px;border-radius:8px;transition:background .1s;line-height:1}
+.emoji-item:hover{background:rgba(255,255,255,0.08)}
+
+.proxy-banner{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(255,60,60,0.95);color:#fff;font-size:12px;font-weight:700;padding:8px 20px;border-radius:20px;z-index:9999;font-family:monospace;letter-spacing:1px;box-shadow:0 4px 20px rgba(255,0,0,0.3);animation:slideDown .3s ease;white-space:nowrap}
+
+.conn-status{display:flex;align-items:center;gap:5px;font-size:11px;font-family:monospace}
+.conn-dot{width:7px;height:7px;border-radius:50%;background:#555;flex-shrink:0;transition:background .3s}
+.conn-dot.connected{background:#00ff50;box-shadow:0 0 6px #00ff50}
+.conn-dot.connecting{background:#ffaa00;animation:pulse .8s infinite}
+.conn-dot.disconnected{background:#ff4040}
+.ping-val{font-size:11px;font-family:monospace;font-weight:700}
+.ping-good{color:#00ff50}
+.ping-mid{color:#ffaa00}
+.ping-bad{color:#ff4040}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+@media (max-width: 768px) {
+  html, body { display:block; }
+  .app {
+    width:100vw !important;
+    height:100vh !important;
+    max-width:100% !important;
+    max-height:100% !important;
+    border-radius:0 !important;
+  }
+  .header { border-radius:0 !important; }
+  .bar { border-radius:0 !important; }
+  .bubble { max-width:80vw !important; font-size:14px !important; }
+  .emoji-picker { width:240px !important; right:8px !important; }
+  .entry-input { width:80vw !important; max-width:300px !important; }
+  .entry-btn { width:80vw !important; max-width:300px !important; }
+  .audio-player audio { width:220px !important; }
+}
+
+.ai-btn{height:38px;padding:0 12px;border-radius:20px;border:1.5px solid rgba(167,139,250,0.4);background:rgba(124,58,237,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:12px;font-weight:700;color:#a78bfa;font-family:'Noto Sans KR',sans-serif;transition:all .15s}
+.ai-btn:hover{background:rgba(124,58,237,0.3);border-color:#a78bfa}
+.ai-panel{position:absolute;bottom:70px;left:14px;right:14px;background:#13111e;border:1px solid rgba(167,139,250,0.2);border-radius:16px;z-index:100;box-shadow:0 8px 32px rgba(0,0,0,0.6);display:flex;flex-direction:column;max-height:420px;overflow:hidden;animation:fadeUp .15s ease}
+.ai-panel-header{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.07);display:flex;align-items:center;justify-content:space-between;background:rgba(124,58,237,0.1)}
+.ai-panel-title{font-size:13px;font-weight:700;color:#a78bfa;font-family:'Noto Sans KR',sans-serif;display:flex;align-items:center;gap:6px}
+.ai-panel-close{font-size:16px;cursor:pointer;color:rgba(255,255,255,0.3);background:none;border:none;line-height:1}
+.ai-panel-close:hover{color:#fff}
+.ai-messages{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.1) transparent}
+.ai-bubble{padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.6;max-width:85%;word-break:break-word;white-space:pre-wrap}
+.ai-bubble.user{background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;align-self:flex-end;border-radius:12px 12px 4px 12px}
+.ai-bubble.bot{background:rgba(255,255,255,0.07);color:var(--text);border:1px solid rgba(255,255,255,0.08);align-self:flex-start;border-radius:12px 12px 12px 4px}
+.ai-bubble.typing{color:#a78bfa;font-style:italic}
+.ai-input-row{display:flex;gap:8px;padding:10px 12px;border-top:1px solid rgba(255,255,255,0.07);background:rgba(0,0,0,0.2)}
+.ai-input{flex:1;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:8px 14px;font-size:13px;color:#fff;font-family:'Noto Sans KR',sans-serif;outline:none}
+.ai-input::placeholder{color:#444}
+.ai-input:focus{border-color:rgba(167,139,250,0.4)}
+.ai-send{width:34px;height:34px;border-radius:50%;border:none;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;font-size:14px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:transform .1s}
+.ai-send:disabled{background:rgba(255,255,255,0.1);cursor:not-allowed}
+.ai-send:not(:disabled):active{transform:scale(.9)}
+.hidden{display:none!important}
+/* 스크린샷 경고 */
+.ss-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.ss-icon{font-size:52px}
+.ss-title{font-size:20px;font-weight:700;color:#ff5a5a}
+.ss-sub{font-size:13px;color:#888;text-align:center;line-height:1.7;max-width:260px}
+.ss-badge{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#ff5a5a;color:#fff;font-size:12px;font-weight:700;padding:8px 18px;border-radius:20px;z-index:9998;font-family:'Noto Sans KR',sans-serif;white-space:nowrap;animation:slideDown .3s ease}
+@keyframes slideDown{from{opacity:0;transform:translate(-50%,-10px)}to{opacity:1;transform:translate(-50%,0)}}
+
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header hidden" id="mainHeader"><div class="header-name">만두 집사가 만든 기깔나는 채팅</div>
+    
+    <div style="text-align:right"><div class="header-nick" id="headerNick"></div><div style="font-size:9px;color:#4ade80;margin-top:2px;text-align:right;">🔒 E2E 암호화</div><div class="header-ip" id="headerIp"></div>
+      <div class="conn-status" style="justify-content:flex-end;margin-top:3px"><div class="conn-dot connecting" id="connDot"></div><span class="ping-val ping-mid" id="pingVal">...</span><span style="color:#3a3a3a;font-size:10px;font-family:monospace">ms</span></div></div>
+  </div>
+
+  <!-- 입장 화면 -->
+  <div class="entry-screen" id="entryScreen">
+    
+    <div class="entry-label">닉네임</div>
+    <input class="entry-input" id="nickInput" placeholder="예) 이헌제" maxlength="10" autocomplete="off"/>
+    <div class="entry-label">비밀번호</div>
+    <input class="entry-input" type="password" id="pwInput" placeholder="비밀번호 입력" autocomplete="off"/>
+    <div class="entry-error" id="pwError">❌ 비밀번호가 틀렸어요</div>
+      <div class="lock-msg hidden" id="lockMsg"></div>
+    <button class="entry-btn" id="entryBtn">확인</button>
+  </div>
+
+  <!-- 채팅 화면 -->
+  <div class="chat-screen hidden" id="chatScreen">
+    <div class="chat" id="chat"></div>
+    <div class="bar">
+      <div class="typing-indicator" id="typingIndicator"></div>
+      <div class="bar-top">
+        <button class="img-btn" id="fileBtn">파일</button>
+        <button class="ai-btn" id="aiBtn">🤖 AI</button>
+        <input type="file" class="img-input" id="fileInput" accept="image/*,audio/*"/>
+        <input class="input" id="msgInput" placeholder="메시지를 입력하세요..." autocomplete="off"/>
+        <button class="emoji-btn" id="emojiBtn">😊</button>
+        <button class="send" id="sendBtn" disabled>전송</button>
+      </div>
+      <div class="bar-bottom">
+        <span class="del-label">🗑 삭제</span>
+        <button class="del-chip active" data-min="0">안함</button>
+        <button class="del-chip" data-min="1">1분</button>
+        <button class="del-chip" data-min="5">5분</button>
+        <button class="del-chip" data-min="10">10분</button>
+        <button class="del-chip" data-min="30">30분</button>
+        <button class="del-chip" data-min="60">1시간</button>
+      </div>
+    </div>
+    <div class="emoji-picker hidden" id="emojiPicker"></div>
+  <div class="ai-panel hidden" id="aiPanel"><div class="ai-panel-header"><div class="ai-panel-title">🤖 AI 어시스턴트</div><button class="ai-panel-close" id="aiClose">✕</button></div><div class="ai-messages" id="aiMessages"><div class="ai-bubble bot">안녕하세요! 무엇이든 물어보세요 😊</div></div><div class="ai-input-row"><input class="ai-input" id="aiInput" placeholder="AI에게 질문하세요..." autocomplete="off"/><button class="ai-send" id="aiSend">➤</button></div></div>
+  </div>
+
+  <!-- AI 화면 -->
+  <div id="aiScreen" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+    <!-- AI 헤더 -->
+    <div style="padding:14px 20px;background:rgba(255,255,255,0.07);backdrop-filter:blur(24px);border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;gap:12px;border-radius:16px;flex-shrink:0;">
+      <button id="aiBackBtn" style="background:none;border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:5px 12px;color:#888;font-size:12px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:all .15s">← 돌아가기</button>
+      <div style="display:flex;align-items:center;gap:8px;flex:1">
+        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#a78bfa,#60a5fa);display:flex;align-items:center;justify-content:center;font-size:16px;">🤖</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#fff;">AI 어시스턴트</div>
+          <div style="font-size:10px;color:#a78bfa;font-family:monospace;">Claude Sonnet 4</div>
+        </div>
+      </div>
+    </div>
+    <!-- AI 메시지 -->
+    <div id="aiMessages2" style="flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.08) transparent;">
+      <div style="display:flex;gap:8px;align-items:flex-end;">
+        <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#a78bfa,#60a5fa);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">🤖</div>
+        <div style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.08);border-radius:14px 14px 14px 4px;padding:10px 14px;font-size:13px;color:#e2e8f0;line-height:1.6;max-width:75%;">안녕하세요! 무엇이든 물어보세요 😊</div>
+      </div>
+    </div>
+    <!-- AI 입력 -->
+    <div style="padding:12px 16px;background:rgba(255,255,255,0.07);backdrop-filter:blur(24px);border-top:1px solid rgba(255,255,255,0.08);display:flex;gap:8px;align-items:center;border-radius:16px;flex-shrink:0;">
+      <input id="aiInput2" style="flex:1;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:9px 16px;color:#fff;font-size:13px;font-family:'Noto Sans KR',sans-serif;outline:none;" placeholder="AI에게 질문하세요..."/>
+      <button id="aiSend2" style="width:36px;height:36px;border-radius:50%;border:none;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">➤</button>
+    </div>
+  </div>
+
+
+<!-- 스크린샷 경고 오버레이 -->
+<div class="ss-overlay hidden" id="ssOverlay">
+  <div class="ss-icon">📵</div>
+  <div class="ss-title">스크린샷 감지!</div>
+  <div class="ss-sub">이 채팅의 내용을<br/>캡처하는 것은 금지되어 있어요.<br/>상대방에게 알림이 전송됩니다.</div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://zoraxkazfqxiumrbxhxs.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpvcmF4a2F6ZnF4aXVtcmJ4aHhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxMDk1NDksImV4cCI6MjA4ODY4NTU0OX0.fJe9e1eDINgXonnYHFnXTrEiSlajn6HA69nKn68I_Vw';
+const CORRECT_PW = '1234';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let myNick = '';
+let pwFailCount = 0;
+let lockUntil = 0;
+let encKey = '';
+
+function encrypt(text){
+  return CryptoJS.AES.encrypt(text, encKey).toString();
+}
+
+function decrypt(cipher){
+  try {
+    const bytes = CryptoJS.AES.decrypt(cipher, encKey);
+    const dec = bytes.toString(CryptoJS.enc.Utf8);
+    return dec || cipher; // 복호화 실패시 원문 반환
+  } catch(e){ return cipher; }
+}
+let myIp = '';
+let lastSender = null;
+let lastMsgId = null;
+let selectedDelMin = 0;
+
+// 삭제 칩 선택
+document.querySelectorAll('.del-chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.del-chip').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedDelMin = parseInt(btn.dataset.min);
+  });
+});
+
+// 입장
+document.getElementById('entryBtn').addEventListener('click', enterChat);
+[document.getElementById('nickInput'), document.getElementById('pwInput')].forEach(el => {
+  el.addEventListener('keydown', e => { if(e.key==='Enter') enterChat(); });
+});
+
+async function enterChat(){
+  const nick = document.getElementById('nickInput').value.trim();
+  const pw = document.getElementById('pwInput').value;
+  const errEl = document.getElementById('pwError');
+  if(!nick){ document.getElementById('nickInput').focus(); return; }
+  // 잠금 체크
+  if(Date.now() < lockUntil){
+    const remain = Math.ceil((lockUntil - Date.now()) / 1000);
+    const lockEl = document.getElementById('lockMsg');
+    lockEl.textContent = '⏳ ' + remain + '초 후 재시도 가능';
+    lockEl.classList.remove('hidden');
+    return;
+  }
+  if(pw !== CORRECT_PW){
+    pwFailCount++;
+    errEl.classList.add('show');
+    document.getElementById('pwInput').value = '';
+    document.getElementById('pwInput').focus();
+    setTimeout(() => errEl.classList.remove('show'), 2500);
+    if(pwFailCount >= 5){
+      lockUntil = Date.now() + 30000;
+      pwFailCount = 0;
+      const lockEl = document.getElementById('lockMsg');
+      lockEl.classList.remove('hidden');
+      const lockInterval = setInterval(() => {
+        const remain = Math.ceil((lockUntil - Date.now()) / 1000);
+        if(remain <= 0){
+          clearInterval(lockInterval);
+          lockEl.classList.add('hidden');
+          lockEl.textContent = '';
+        } else {
+          lockEl.textContent = '🔒 ' + remain + '초 잠금 중 (5회 실패)';
+        }
+      }, 1000);
+      document.getElementById('entryBtn').disabled = true;
+      setTimeout(() => { document.getElementById('entryBtn').disabled = false; }, 30000);
+    }
+    return;
+  }
+  pwFailCount = 0;
+  document.getElementById('lockMsg').classList.add('hidden');
+  
+async function getMyIp(){
+  try {
+    const r = await fetch('https://api.ipify.org?format=json');
+    const d = await r.json();
+    return d.ip;
+  } catch(e){ return '알 수 없음'; }
+}
+
+  encKey = pw;
+  myNick = nick;
+  document.getElementById('headerNick').textContent = nick;
+  // IP 가져오기
+  const ip = await getMyIp();
+  document.getElementById('headerIp').textContent = ip;  // 헤더엔 원본 IP 표시
+  checkProxy(ip);
+  checkDeviceFingerprint(nick);
+  myIp = encrypt(ip);  // DB엔 암호화해서 저장
+
+  document.getElementById('entryScreen').classList.add('hidden');
+  document.getElementById('chatScreen').classList.remove('hidden');
+  document.getElementById('mainHeader').classList.remove('hidden');
+  await loadMessages();
+  subscribeMessages();
+  await sb.from('typing').delete().eq('sender', myNick);
+  isCurrentlyTyping = false;
+  subscribeTyping();
+  setInterval(loadTyping, 5000);
+  setInterval(checkConnection, 2000);
+  checkConnection();
+  document.getElementById('msgInput').focus();
+}
+
+async function loadMessages(){
+  const { data } = await sb.from('messages').select('*').order('created_at', { ascending: true });
+  if(data) data.forEach(m => renderMsg(m));
+}
+
+function subscribeMessages(){
+  sb.channel('public:messages')
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages' }, payload => {
+      if(payload.new.id !== lastMsgId) renderMsg(payload.new);
+    })
+    .on('postgres_changes', { event:'DELETE', schema:'public', table:'messages' }, payload => {
+      const el = document.getElementById('msg-' + payload.old.id);
+      if(el) el.remove();
+    })
+    .subscribe();
+}
+
+async function renderMsg(m){
+  if(m.id === lastMsgId) return;
+  lastMsgId = m.id;
+  const chat = document.getElementById('chat');
+  const isMe = m.sender === myNick;
+  const from = isMe ? 'me' : 'other';
+  const gap = lastSender !== m.sender;
+  lastSender = m.sender;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'msg-wrap ' + from + (gap ? ' gap' : '');
+  wrap.id = 'msg-' + m.id;
+
+  const senderLabel = (!isMe && gap) ? '<div class="msg-sender">' + escHtml(m.sender) + '</div>' : '';
+  const time = new Date(m.created_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false});
+
+  // 남은 시간 계산
+  let timerHtml = '';
+  if(m.delete_at){
+    const remaining = Math.max(0, Math.round((new Date(m.delete_at) - Date.now()) / 1000));
+    timerHtml = '<span class="msg-timer" id="timer-' + m.id + '">⏱ ' + formatRemaining(remaining) + '</span>';
+    // 카운트다운
+    startCountdown(m.id, m.delete_at);
+  }
+
+  const myIpHtml = isMe ? '<span style="font-size:9px;color:#3a3a3a;margin-left:4px;">· ' + (m.ip ? decrypt(m.ip) : '') + '</span>' : '';
+  let decText = '';
+  let msgValid = true;
+  if(m.text){
+    const unpacked = await unpackMessage(m.text, m.sender);
+    decText = unpacked.text;
+    msgValid = unpacked.valid;
+  }
+  const decImgUrl = m.image_url ? decrypt(m.image_url) : '';
+  const imgHtml = decImgUrl ? '<img class="bubble-img" src="' + decImgUrl + '" onclick="window.open(this.src)" loading="lazy"/>' : '';
+  const decAudioUrl = m.audio_url ? decrypt(m.audio_url) : '';
+  const audioName = decText || '음악 파일';
+  const audioHtml = decAudioUrl ? '<div class="audio-player"><div><div class="audio-name">🎵 ' + escHtml(audioName) + '</div><audio controls src="' + decAudioUrl + '"></audio></div></div>' : '';
+  const tamperWarning = !msgValid ? '<div style="font-size:10px;color:#ff4040;margin-top:2px;font-family:monospace;">⚠️ 변조된 메시지</div>' : '';
+  const verifiedBadge = msgValid && decText ? '<span style="font-size:9px;color:rgba(0,255,80,0.4);margin-left:4px;font-family:monospace;">✓</span>' : '';
+  const textHtml = decText ? '<div class="bubble">' + linkify(decText) + tamperWarning + '</div>' : '';
+  const bubbleHtml = m.image_url ? '<div class="bubble" style="padding:6px;">' + imgHtml + '</div>' : m.audio_url ? '<div class="bubble" style="padding:10px 14px;">' + audioHtml + '</div>' : textHtml;
+  const actionsHtml = isMe ? '<div class="msg-actions" id="actions-' + m.id + '"><button class="msg-action-btn" onclick="editMsg(' + m.id + ', this)">수정</button><button class="msg-action-btn del" onclick="deleteMsg(' + m.id + ')">삭제</button></div>' : '';
+  wrap.innerHTML = '<div class="msg-col ' + from + '">' + senderLabel + bubbleHtml + '<div class="msg-time">' + time + timerHtml + myIpHtml + '</div>' + actionsHtml + '</div>';
+  chat.appendChild(wrap);
+  chat.scrollTop = chat.scrollHeight;
+
+  // 내 메시지면 10초 후 수정/삭제 버튼 숨기기
+  if(isMe){
+    setTimeout(() => {
+      const actions = document.getElementById('actions-' + m.id);
+      if(actions) actions.remove();
+    }, 10000);
+  }
+}
+
+function formatRemaining(sec){
+  if(sec <= 0) return '삭제됨';
+  if(sec < 60) return sec + '초 후 삭제';
+  return Math.ceil(sec/60) + '분 후 삭제';
+}
+
+function startCountdown(msgId, deleteAt){
+  const interval = setInterval(() => {
+    const el = document.getElementById('timer-' + msgId);
+    if(!el){ clearInterval(interval); return; }
+    const remaining = Math.max(0, Math.round((new Date(deleteAt) - Date.now()) / 1000));
+    el.textContent = '⏱ ' + formatRemaining(remaining);
+    if(remaining <= 0){
+      clearInterval(interval);
+      const wrap = document.getElementById('msg-' + msgId);
+      if(wrap) wrap.remove();
+      // DB 삭제
+      sb.from('messages').delete().eq('id', msgId).then();
+    }
+  }, 1000);
+}
+
+async function send(){
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if(!text || !myNick) return;
+  input.value = '';
+  document.getElementById('sendBtn').disabled = true;
+
+  const insertData = { text: encrypt(text), sender: myNick, ip: myIp };
+  if(selectedDelMin > 0){
+    insertData.delete_at = new Date(Date.now() + selectedDelMin * 60 * 1000).toISOString();
+  }
+  await sb.from('messages').insert(insertData);
+  clearTimeout(typingTimer);
+  setTyping(false);
+}
+
+
+// 스크린샷 감지
+function onScreenshot(){
+  // 채팅방 입장 후에만 작동
+  if(!myNick) return;
+
+  // 상대방에게 시스템 메시지 전송
+  sb.from('messages').insert({ text: '📵 ' + myNick + '님이 스크린샷을 찍었어요!', sender: '⚠️ 시스템' }).then();
+
+  // 오버레이 표시
+  const overlay = document.getElementById('ssOverlay');
+  overlay.classList.remove('hidden');
+  setTimeout(() => overlay.classList.add('hidden'), 3000);
+}
+
+// 키보드 단축키 감지 (Print Screen, Cmd+Shift+3/4/5)
+document.addEventListener('keydown', e => {
+  if(
+    e.key === 'PrintScreen' ||
+    (e.metaKey && e.shiftKey && ['3','4','5','s','S'].includes(e.key))
+  ){
+    onScreenshot();
+  }
+});
+
+// 화면 캡처 API 감지 (일부 브라우저)
+if(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia){
+  const origGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+  navigator.mediaDevices.getDisplayMedia = async (opts) => {
+    onScreenshot();
+    return origGetDisplayMedia(opts);
+  };
+}
+
+// 포커스 잃음 감지 (캡처 도구 실행 시)
+let focusTimer;
+window.addEventListener('blur', () => {
+  focusTimer = setTimeout(() => {
+    if(!myNick) return;
+    // 배경화면 흐리게
+    document.getElementById('chat').style.filter = 'blur(8px)';
+  }, 200);
+});
+window.addEventListener('focus', () => {
+  clearTimeout(focusTimer);
+  document.getElementById('chat').style.filter = '';
+});
+
+
+
+
+// 사진 전송
+document.getElementById('fileBtn').addEventListener('click', () => {
+  document.getElementById('fileInput').click();
+});
+
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if(!file || !myNick) return;
+  e.target.value = '';
+
+  const isAudio = file.type.startsWith('audio/');
+  const bucket = isAudio ? 'chat-audio' : 'chat-images';
+
+  const loadId = 'load-' + Date.now();
+  const chat = document.getElementById('chat');
+  const loadEl = document.createElement('div');
+  loadEl.id = loadId;
+  loadEl.className = 'msg-wrap me gap';
+  loadEl.innerHTML = '<div class="msg-col me"><div class="bubble"><div class="img-loading">업로드 중...</div></div></div>';
+  chat.appendChild(loadEl);
+  chat.scrollTop = chat.scrollHeight;
+
+  try {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const path = Date.now() + '.' + ext;
+    const { error } = await sb.storage.from(bucket).upload(path, file, { upsert: true });
+    if(error) throw error;
+
+    const { data: urlData } = sb.storage.from(bucket).getPublicUrl(path);
+    const fileUrl = urlData.publicUrl;
+    document.getElementById(loadId)?.remove();
+
+    if(isAudio){
+      await sb.from('messages').insert({ text: encrypt(file.name), sender: myNick, ip: myIp, audio_url: encrypt(fileUrl) });
+    } else {
+      await sb.from('messages').insert({ text: '', sender: myNick, ip: myIp, image_url: encrypt(fileUrl) });
+    }
+  } catch(err) {
+    document.getElementById(loadId)?.remove();
+    alert('업로드 실패: ' + err.message);
+  }
+});
+
+
+// 타이핑 상태
+let typingTimer = null;
+
+let isCurrentlyTyping = false;
+async function setTyping(isTyping){
+  if(!myNick) return;
+  try {
+    if(isTyping){
+      isCurrentlyTyping = true;
+      await sb.from('typing').delete().eq('sender', myNick);
+      await sb.from('typing').insert({ sender: myNick, updated_at: new Date().toISOString() });
+    } else {
+      isCurrentlyTyping = false;
+      await sb.from('typing').delete().eq('sender', myNick);
+    }
+  } catch(e){}
+}
+
+function subscribeTyping(){
+  sb.channel('public:typing')
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'typing' }, () => loadTyping())
+    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'typing' }, () => loadTyping())
+    .on('postgres_changes', { event:'DELETE', schema:'public', table:'typing' }, () => loadTyping())
+    .subscribe();
+}
+
+async function loadTyping(){
+  const { data } = await sb.from('typing').select('*');
+  const now = Date.now();
+  // 10초 이상 된 타이핑 상태는 오래된 것으로 자동 무시
+  const others = (data || []).filter(t => {
+    if(t.sender === myNick) return false;
+    const age = now - new Date(t.updated_at).getTime();
+    return age < 10000;
+  });
+  // 오래된 것 자동 삭제
+  (data || []).forEach(t => {
+    const age = now - new Date(t.updated_at).getTime();
+    if(age >= 10000) sb.from('typing').delete().eq('sender', t.sender).then();
+  });
+  const el = document.getElementById('typingIndicator');
+  if(others.length > 0){
+    const names = others.map(t => t.sender).join(', ');
+    el.innerHTML = names + ' 님이 입력 중<span class="typing-dot">.</span><span class="typing-dot">.</span><span class="typing-dot">.</span>';
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+
+// 페이지 종료 시 타이핑 상태 정리
+window.addEventListener('beforeunload', () => {
+  if(myNick) sb.from('typing').delete().eq('sender', myNick).then();
+});
+
+// 페이지 포커스 잃을 때도 정리
+window.addEventListener('blur', () => {
+  clearTimeout(typingTimer);
+  setTyping(false);
+});
+
+
+async function deleteMsg(id){
+  if(!confirm('메시지를 삭제할까요?')) return;
+  await sb.from('messages').delete().eq('id', id);
+  const el = document.getElementById('msg-' + id);
+  if(el) el.remove();
+}
+
+async function editMsg(id, btn){
+  const wrap = document.getElementById('msg-' + id);
+  const bubble = wrap.querySelector('.bubble');
+  const currentText = bubble.textContent;
+  const newText = prompt('메시지 수정:', currentText);
+  if(!newText || newText === currentText) return;
+  await sb.from('messages').update({ text: encrypt(newText) }).eq('id', id);
+  bubble.textContent = newText;
+}
+
+
+function linkify(text){
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  return escHtml(text).replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:#e8ff5a;text-decoration:underline;word-break:break-all;">$1</a>');
+}
+
+
+// 이모지 피커
+const EMOJIS = [
+  '😊','😂','🥰','😍','🤣','😭','😘','🥺','😁','😎',
+  '🤔','😅','😩','😤','🙄','😏','😒','😔','😳','🤯',
+  '👍','👎','👏','🙌','🤝','💪','🙏','❤️','🔥','✨',
+  '🎉','🎊','💯','⭐','🌟','💀','😈','👻','🤡','💩',
+  '🐶','🐱','🐭','🐸','🐧','🦊','🐻','🐼','🐨','🐯',
+  '🍕','🍔','🍟','🌮','🍜','🍣','🍰','🎂','🍩','🧋',
+  '🚀','💻','📱','🎮','🎵','🎬','📸','💰','🏆','🎯'
+];
+
+const emojiPicker = document.getElementById('emojiPicker');
+const emojiBtn = document.getElementById('emojiBtn');
+
+// 이모지 목록 생성
+EMOJIS.forEach(emoji => {
+  const span = document.createElement('span');
+  span.className = 'emoji-item';
+  span.textContent = emoji;
+  span.addEventListener('click', () => {
+    const input = document.getElementById('msgInput');
+    const pos = input.selectionStart;
+    const val = input.value;
+    input.value = val.slice(0, pos) + emoji + val.slice(pos);
+    input.focus();
+    input.setSelectionRange(pos + emoji.length, pos + emoji.length);
+    document.getElementById('sendBtn').disabled = !input.value.trim();
+    emojiPicker.classList.add('hidden');
+  });
+  emojiPicker.appendChild(span);
+});
+
+emojiBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  emojiPicker.classList.toggle('hidden');
+});
+
+document.addEventListener('click', (e) => {
+  if(!emojiPicker.contains(e.target) && e.target !== emojiBtn){
+    emojiPicker.classList.add('hidden');
+  }
+});
+
+
+// 프록시/VPN 감지
+async function checkProxy(ip){
+  try {
+    const r = await fetch('https://vpnapi.io/api/' + ip + '?key=free');
+    if(!r.ok) return;
+    const d = await r.json();
+    const isProxy = d.security && (d.security.vpn || d.security.proxy || d.security.tor || d.security.relay);
+    if(isProxy){
+      const type = d.security.tor ? 'TOR' : d.security.vpn ? 'VPN' : d.security.proxy ? 'PROXY' : 'RELAY';
+      showProxyWarning(type);
+      // 채팅에도 시스템 메시지
+      await sb.from('messages').insert({ text: '⚠️ ' + myNick + '님이 ' + type + ' 으로 접속했어요!', sender: '⚠️ 시스템', ip: '' });
+    }
+  } catch(e){}
+}
+
+function showProxyWarning(type){
+  const banner = document.createElement('div');
+  banner.className = 'proxy-banner';
+  banner.textContent = '⚠️ ' + type + ' 접속이 감지됐어요!';
+  document.body.appendChild(banner);
+  setTimeout(() => banner.remove(), 5000);
+}
+
+
+// 브라우저 정보 노출 차단
+Object.defineProperty(navigator, 'userAgent', { get: () => 'Mozilla/5.0' });
+Object.defineProperty(navigator, 'appVersion', { get: () => '5.0' });
+Object.defineProperty(navigator, 'platform', { get: () => 'Unknown' });
+Object.defineProperty(navigator, 'vendor', { get: () => '' });
+
+// 디바이스 지문 생성
+function getDeviceFingerprint(){
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.textBaseline = 'top';
+  ctx.font = '14px Arial';
+  ctx.fillText('fingerprint', 2, 2);
+  const canvasHash = canvas.toDataURL().slice(-20);
+
+  const data = [
+    screen.width + 'x' + screen.height,
+    screen.colorDepth,
+    navigator.language,
+    new Date().getTimezoneOffset(),
+    canvasHash,
+    navigator.hardwareConcurrency || 0,
+  ].join('|');
+
+  // 간단한 해시
+  let hash = 0;
+  for(let i = 0; i < data.length; i++){
+    hash = ((hash << 5) - hash) + data.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(16).padStart(8, '0');
+}
+
+async function checkDeviceFingerprint(nick){
+  const fp = getDeviceFingerprint();
+  const stored = localStorage.getItem('chat_fp');
+
+  if(!stored){
+    localStorage.setItem('chat_fp', fp + '|' + nick);
+  } else {
+    const [storedFp, storedNick] = stored.split('|');
+    if(storedFp === fp && storedNick !== nick){
+      // 같은 기기에서 다른 닉네임으로 재접속
+      const banner = document.createElement('div');
+      banner.className = 'proxy-banner';
+      banner.style.background = 'rgba(255,160,0,0.95)';
+      banner.textContent = '⚠️ 이전에 [' + storedNick + '] 로 접속한 기기예요';
+      document.body.appendChild(banner);
+      setTimeout(() => banner.remove(), 5000);
+      // 채팅에 시스템 메시지
+      await sb.from('messages').insert({ text: '🔍 ' + nick + '님은 이전에 [' + storedNick + '] 로 접속한 기기예요.', sender: '⚠️ 시스템', ip: '' });
+    }
+    localStorage.setItem('chat_fp', fp + '|' + nick);
+  }
+}
+
+
+async function checkConnection(){
+  const dot = document.getElementById('connDot');
+  const pingEl = document.getElementById('pingVal');
+  if(!dot || !pingEl) return;
+  try {
+    const t = Date.now();
+    const { error } = await sb.from('messages').select('id').limit(1);
+    const ping = Date.now() - t;
+    if(error) throw error;
+    dot.className = 'conn-dot connected';
+    pingEl.textContent = ping;
+    pingEl.className = 'ping-val ' + (ping < 100 ? 'ping-good' : ping < 300 ? 'ping-mid' : 'ping-bad');
+  } catch(e){
+    dot.className = 'conn-dot disconnected';
+    pingEl.textContent = '!';
+    pingEl.className = 'ping-val ping-bad';
+  }
+}
+
+function setConnStatus(status){
+  const dot = document.getElementById('connDot');
+  if(!dot) return;
+  dot.className = 'conn-dot ' + status;
+}
+
+
+// 메시지 무결성 + 서명
+const HMAC_KEY = CORRECT_PW + '_integrity';
+
+async function signMessage(text, sender){
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(HMAC_KEY);
+  const msgData = encoder.encode(text + '|' + sender);
+  const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name:'HMAC', hash:'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2,'0')).join('').slice(0,16);
+}
+
+async function verifyMessage(text, sender, signature){
+  if(!signature) return true; // 구버전 메시지는 통과
+  const expected = await signMessage(text, sender);
+  return expected === signature;
+}
+
+async function packMessage(text, sender){
+  const sig = await signMessage(text, sender);
+  // 무결성 해시 포함해서 암호화
+  const payload = JSON.stringify({ t: text, s: sig });
+  return encrypt(payload);
+}
+
+async function unpackMessage(encrypted, sender){
+  try {
+    const raw = decrypt(encrypted);
+    if(!raw) return { text: '', valid: true };
+    // JSON 형식이면 새 포맷
+    if(raw.startsWith('{')){
+      const { t, s } = JSON.parse(raw);
+      const valid = await verifyMessage(t, sender, s);
+      return { text: t, valid };
+    }
+    // 구버전 평문
+    return { text: raw, valid: true };
+  } catch(e){
+    return { text: decrypt(encrypted) || '', valid: true };
+  }
+}
+
+
+// AI 패널
+const AI_SYSTEM = '당신은 친절하고 유능한 AI 어시스턴트입니다. 사용자의 질문에 명확하고 도움이 되는 답변을 제공하세요. 한국어로 대화합니다.';
+let aiHistory = [];
+let aiLoading = false;
+
+document.getElementById('aiBtn').addEventListener('click', () => {
+  document.getElementById('chatScreen').style.display = 'none';
+  document.getElementById('mainHeader').style.display = 'none';
+  document.getElementById('aiScreen').style.display = 'flex';
+  document.getElementById('aiInput2').focus();
+});
+
+
+
+function escHtml(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+document.getElementById('msgInput').addEventListener('input', e => {
+  document.getElementById('sendBtn').disabled = !e.target.value.trim();
+  if(e.target.value.trim()){
+    setTyping(true);
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => setTyping(false), 3000);
+  } else {
+    setTyping(false);
+  }
+});
+document.getElementById('msgInput').addEventListener('keydown', e => {
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}
+});
+document.getElementById('sendBtn').addEventListener('click', send);
+</script>
+</body>
+</html>
